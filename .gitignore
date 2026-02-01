@@ -1,0 +1,35 @@
+# Environnement Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Variables d'environnement sensibles
+.env
+
+# Logs
+logs/
+*.log
+
+# Certificats SSL
+ssl/*.key
+ssl/*.crt
+
+# Fichiers système
+.DS_Store
+*.swp
+*~
+
+# Docker
+*.tar.gz
+
+# IDE
+.vscode/
+.idea/
+
+# Couverture de tests
+htmlcov/
+.coverage
+.pytest_cache/

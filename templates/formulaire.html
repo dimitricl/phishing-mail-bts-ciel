@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Phishing Lab Control</title>
+    <style>
+        body { font-family: sans-serif; padding: 50px; background: #f4f7f6; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 400px; margin: auto; }
+        input, select, button { width: 100%; padding: 10px; margin: 10px 0; border-radius: 4px; border: 1px solid #ddd; }
+        button { background: #007bff; color: white; cursor: pointer; border: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>🚀 Lancer une simulation</h2>
+        <form action="/envoyer" method="post">
+            <label>Scénario :</label>
+            <select name="template">
+                {% for t in templates %} <option value="{{t}}">{{t}}</option> {% endfor %}
+            </select>
+            <input type="text" name="nom" placeholder="Nom de la victime" required>
+            <input type="email" name="email" placeholder="Email de la victime" required>
+            <button type="submit">Envoyer le Phishing</button>
+        </form>
+    </div>
+</body>
+</html>

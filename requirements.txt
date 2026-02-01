@@ -1,0 +1,17 @@
+# Flask et extensions
+Flask==3.0.0
+email-validator==2.1.0
+
+# Template engine (Jinja2 est inclus avec Flask mais on force la version)
+Jinja2==3.1.2
+
+# Pour la BDD (Phase 2)
+SQLAlchemy==2.0.23
+
+# Pour les tests
+pytest==7.4.3
+pytest-flask==1.3.0
+pytest-cov==4.1.0
+
+# Pour le monitoring (optionnel)
+python-dotenv==1.0.0
