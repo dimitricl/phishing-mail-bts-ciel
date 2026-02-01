@@ -1,72 +1,106 @@
 import os
-from flask import Flask, render_template, request, flash
-# Import des classes depuis phishing_server.py
+import re
+import logging
+from flask import Flask, render_template, request, flash, redirect, url_for
+from email_validator import validate_email, EmailNotValidError
 from phishing_server import PhishingTemplateSecure, PhishingEmail, SMTPSessionSecure
 
-app = Flask(__name__)
-app.secret_key = os.urandom(24)
+# Configuration du logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
-# --- CONFIGURATION CENTRALISÉE ---
-# On utilise un dictionnaire pour regrouper les paramètres
+app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY', os.urandom(24))
+
+# Configuration
 CONFIG = {
-    "SMTP_SERVER": "localhost",
-    "SMTP_PORT": 1025,
-    "BASE_URL": "http://localhost:8080",
-    "TEMPLATES_DIR": "templates"
+    "SMTP_SERVER": os.getenv("SMTP_SERVER", "localhost"),
+    "SMTP_PORT": int(os.getenv("SMTP_PORT", "1025")),
+    "BASE_URL": os.getenv("BASE_URL", "http://localhost:8080"),
+    "TEMPLATES_DIR": os.getenv("TEMPLATES_DIR", "templates"),
+    "MAX_NAME_LENGTH": 50,
+    "ALLOWED_TEMPLATES": ["microsoft", "netflix", "support"]
 }
 
-@app.route('/', methods=['GET', 'POST'])
-@app.route('/envoyer', methods=['POST'])
+# Regex pour valider le nom (alphanumeric + espaces uniquement)
+NAME_REGEX = re.compile(r'^[a-zA-Z0-9\s\-\']{1,50}$')
+
+@app.route('/')
 def index():
-    templates_dispo = ["microsoft", "netflix", "support"]
-    
-    if request.method == 'POST':
-        target_email = request.form.get('email')
-        target_name = request.form.get('nom') # Correspond au 'name="nom"' de ton HTML
-        selected_template = request.form.get('template')
+    return render_template('formulaire.html', templates=CONFIG["ALLOWED_TEMPLATES"])
 
-        # FIX : On accède à la valeur via le dictionnaire CONFIG
-        url_clic = f"{CONFIG['BASE_URL']}/?victime={target_name}"
+@app.route('/envoyer', methods=['POST'])
+def envoyer():
+    email = request.form.get('email', '').strip()
+    nom = request.form.get('nom', '').strip()
+    template_name = request.form.get('template', '').strip()
+    
+    print(f"--- Tentative d'envoi vers {email} ---")
+    
+    # Validation 1 : Email
+    try:
+        valid_email = validate_email(email, check_deliverability=False)
+        email = valid_email.normalized
+    except EmailNotValidError as e:
+        print(f"❌ Erreur : Email invalide - {str(e)}")
+        flash(f"Email invalide : {str(e)}", "error")
+        return redirect(url_for('index'))
+    
+    # Validation 2 : Nom (regex)
+    if not NAME_REGEX.match(nom):
+        print(f"❌ Erreur : Caractères non autorisés dans le nom")
+        flash("Le nom contient des caractères non autorisés", "error")
+        return redirect(url_for('index'))
+    
+    if len(nom) > CONFIG["MAX_NAME_LENGTH"]:
+        print(f"❌ Erreur : Nom trop long")
+        flash(f"Le nom ne peut pas dépasser {CONFIG['MAX_NAME_LENGTH']} caractères", "error")
+        return redirect(url_for('index'))
+    
+    # Validation 3 : Template autorisé
+    if template_name not in CONFIG["ALLOWED_TEMPLATES"]:
+        print(f"❌ Erreur : Template non autorisé : {template_name}")
+        flash("Template non autorisé", "error")
+        return redirect(url_for('index'))
+    
+    try:
+        # Génération de l'URL de tracking
+        url_clic = f"{CONFIG['BASE_URL']}/?victime={nom}"
         
-        try:
-            print(f"--- Tentative d'envoi vers {target_email} ---")
-            
-            # 2. Génération du contenu
-            template_mgr = PhishingTemplateSecure(template_folder=CONFIG['TEMPLATES_DIR'])
-            body = template_mgr.get_content(
-                f"{selected_template}.html", 
-                nom=target_name, 
-                url=url_clic
-            )
-            
-            if body is None:
-                raise Exception(f"Template {selected_template}.html introuvable.")
-
-            # 3. Création de l'objet Email
-            email_obj = PhishingEmail(
-                sender="security-alert@simulation-lab.local",
-                receiver=target_email,
-                subject="⚠️ Alerte de sécurité : Action requise",
-                html_body=body
-            )
-
-            # 4. Envoi (Accès aux variables via CONFIG)
-            # Utilisation directe car ta SMTPSession actuelle ne gère pas encore le 'with'
-            session = SMTPSessionSecure(CONFIG['SMTP_SERVER'], CONFIG['SMTP_PORT'])
-            session.send(email_obj)
-            
-            print(f"✅ Succès : Mail envoyé à {target_name}")
-            flash(f"✅ Simulation envoyée avec succès à {target_name}", "success")
-            
-        except Exception as e:
-            print(f"❌ Erreur : {str(e)}")
-            flash(f"❌ Erreur lors de l'envoi : {str(e)}", "danger")
-            
-    return render_template('formulaire.html', templates=templates_dispo)
-
-if __name__ == "__main__":
-    if not os.path.exists("./ssl/nginx-selfsigned.crt"):
-        print("⚠️ Attention : Certificat SSL manquant dans ./ssl/.")
+        # Rendu du template avec Jinja2
+        template_engine = PhishingTemplateSecure(CONFIG["TEMPLATES_DIR"])
+        html_content = template_engine.get_content(
+            f"{template_name}.html",
+            nom=nom,
+            url=url_clic
+        )
+        
+        # Création de l'email
+        email_obj = PhishingEmail(
+            sender="security-alert@simulation-lab.local",
+            receiver=email,
+            subject="🔒 Alerte de sécurité : Action requise",
+            html_body=html_content
+        )
+        
+        # Envoi SMTP
+        smtp_session = SMTPSessionSecure(
+            CONFIG["SMTP_SERVER"],
+            CONFIG["SMTP_PORT"]
+        )
+        smtp_session.send(email_obj)
+        
+        print(f"✅ Succès : Mail envoyé à {nom}")
+        flash(f"Email de phishing envoyé avec succès à {email}", "success")
+        
+    except Exception as e:
+        print(f"❌ Erreur lors de l'envoi: {str(e)}")
+        flash(f"Erreur lors de l'envoi : {str(e)}", "error")
     
+    return redirect(url_for('index'))
+
+if __name__ == '__main__':
     print("🚀 Interface de Phishing lancée sur http://localhost:5000")
-    app.run(port=5000, debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)
