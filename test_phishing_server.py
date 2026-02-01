@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch, MagicMock
 import os
 import tempfile
 import shutil
-from phishing_server_secure import (
+from phishing_server import (
     PhishingTemplateSecure,
     PhishingEmail,
     SMTPSessionSecure
@@ -175,7 +175,7 @@ def test_smtp_send_connection_error(mock_smtp):
     with pytest.raises(Exception) as exc_info:
         session.send(email)
     
-    assert "connexion" in str(exc_info.value).lower()
+    assert "connecter" in str(exc_info.value).lower()
 
 
 @patch('smtplib.SMTP')
