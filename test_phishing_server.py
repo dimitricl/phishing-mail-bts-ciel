@@ -242,3 +242,150 @@ def test_full_workflow(temp_template_dir):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--cov=phishing_server_secure", "--cov-report=html"])
+
+
+# ==================== TESTS ADDITIONNELS ====================
+
+def test_template_env_configuration(template_manager):
+    """Test que l'environnement Jinja2 est bien configuré."""
+    assert callable(template_manager.env.autoescape)
+    assert template_manager.env.trim_blocks == True
+    assert template_manager.env.lstrip_blocks == True
+
+
+def test_get_content_with_empty_variables(template_manager):
+    """Test de rendu avec des variables vides."""
+    content = template_manager.get_content("test.html", nom="", url="")
+    assert content is not None
+    assert "Hello , click" in content
+
+
+def test_get_content_with_special_characters(template_manager):
+    """Test avec caractères spéciaux dans les variables."""
+    content = template_manager.get_content(
+        "test.html",
+        nom="Jean-François Ö'Reilly",
+        url="https://example.com?param=value&other=123"
+    )
+    assert content is not None
+    assert "Jean-François" in content or "Jean-Fran" in content
+
+
+def test_email_multiple_recipients():
+    """Test d'email avec plusieurs destinataires."""
+    email = PhishingEmail(
+        sender="test@example.com",
+        receiver="victim1@example.com, victim2@example.com",
+        subject="Test Multiple",
+        html_body="<p>Test</p>"
+    )
+    assert "victim1@example.com" in email.message['To']
+
+
+def test_email_with_long_subject():
+    """Test avec un sujet très long."""
+    long_subject = "A" * 500
+    email = PhishingEmail(
+        sender="test@example.com",
+        receiver="victim@example.com",
+        subject=long_subject,
+        html_body="<p>Test</p>"
+    )
+    assert len(email.message['Subject']) > 400
+
+
+def test_email_with_unicode():
+    """Test avec des caractères unicode dans le sujet."""
+    email = PhishingEmail(
+        sender="test@example.com",
+        receiver="victim@example.com",
+        subject="🔒 Alerte de sécurité 中文",
+        html_body="<p>Bonjour 日本語</p>"
+    )
+    assert email.message['Subject'] is not None
+
+
+def test_smtp_timeout_configuration():
+    """Test de la configuration du timeout SMTP."""
+    session = SMTPSessionSecure(host="smtp.test.com", port=587, timeout=30)
+    assert session.timeout == 30
+
+
+def test_smtp_default_values():
+    """Test des valeurs par défaut de SMTPSessionSecure."""
+    session = SMTPSessionSecure()
+    assert session.host == "localhost"
+    assert session.port == 1025
+    assert session.timeout == 10
+
+
+@patch('smtplib.SMTP')
+def test_smtp_noop_called(mock_smtp):
+    """Test que la méthode noop() est bien appelée."""
+    mock_server = MagicMock()
+    mock_smtp.return_value.__enter__.return_value = mock_server
+    
+    email = PhishingEmail(
+        sender="test@example.com",
+        receiver="victim@example.com",
+        subject="Test",
+        html_body="<p>Test</p>"
+    )
+    
+    session = SMTPSessionSecure()
+    session.send(email)
+    
+    # Vérifie que noop a été appelé
+    mock_server.noop.assert_called_once()
+
+
+@patch('smtplib.SMTP')
+def test_smtp_timeout_used_in_connection(mock_smtp):
+    """Test que le timeout est bien passé à la connexion SMTP."""
+    mock_server = MagicMock()
+    mock_smtp.return_value.__enter__.return_value = mock_server
+    
+    email = PhishingEmail(
+        sender="test@example.com",
+        receiver="victim@example.com",
+        subject="Test",
+        html_body="<p>Test</p>"
+    )
+    
+    session = SMTPSessionSecure(timeout=25)
+    session.send(email)
+    
+    # Vérifie que SMTP a été appelé avec le bon timeout
+    mock_smtp.assert_called_once_with('localhost', 1025, timeout=25)
+
+
+def test_template_with_nested_variables(temp_template_dir):
+    """Test avec des variables imbriquées."""
+    with open(os.path.join(temp_template_dir, "nested.html"), "w") as f:
+        f.write("<html><body>{{ user.name }} at {{ user.email }}</body></html>")
+    
+    manager = PhishingTemplateSecure(temp_template_dir)
+    content = manager.get_content(
+        "nested.html",
+        user={"name": "John", "email": "john@test.com"}
+    )
+    assert content is not None
+    assert "John" in content
+    assert "john@test.com" in content
+
+
+def test_email_content_type():
+    """Test que le content-type est bien défini."""
+    email = PhishingEmail(
+        sender="test@example.com",
+        receiver="victim@example.com",
+        subject="Test",
+        html_body="<p>Test HTML</p>"
+    )
+    email_str = email.as_string()
+    assert "text/html" in email_str
+    assert "utf-8" in email_str.lower()
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "--cov=phishing_server", "--cov-report=html"])
